@@ -1,0 +1,76 @@
+version: "3.8"
+
+services:
+  postgres-auth:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports: ["5433:5432"]
+    volumes:
+      - ./services/auth-service/migrations:/docker-entrypoint-initdb.d
+
+  postgres-payments:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports: ["5434:5432"]
+    volumes:
+      - ./services/payments-service/migrations:/docker-entrypoint-initdb.d
+
+  postgres-wallet:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wallet
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports: ["5435:5432"]
+    volumes:
+      - ./services/wallet-service/migrations:/docker-entrypoint-initdb.d
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  auth-service:
+    build: ./services/auth-service
+    ports: ["4001:4001"]
+    environment:
+      DATABASE_URL: postgres://app:app@postgres-auth:5432/auth
+      JWT_SECRET: dev-secret-change-me
+      PORT: 4001
+    depends_on: [postgres-auth]
+
+  payments-service:
+    build: ./services/payments-service
+    ports: ["4002:4002"]
+    environment:
+      DATABASE_URL: postgres://app:app@postgres-payments:5432/payments
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      PORT: 4002
+    depends_on: [postgres-payments, rabbitmq]
+
+  wallet-service:
+    build: ./services/wallet-service
+    ports: ["4003:4003"]
+    environment:
+      DATABASE_URL: postgres://app:app@postgres-wallet:5432/wallet
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      PORT: 4003
+    depends_on: [postgres-wallet, rabbitmq]
+
+  api-gateway:
+    build: ./services/api-gateway
+    ports: ["4000:4000"]
+    environment:
+      AUTH_URL: http://auth-service:4001
+      PAYMENTS_URL: http://payments-service:4002
+      WALLET_URL: http://wallet-service:4003
+      JWT_SECRET: dev-secret-change-me
+      PORT: 4000
+    depends_on: [auth-service, payments-service, wallet-service]
